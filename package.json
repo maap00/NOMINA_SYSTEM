@@ -1,0 +1,13 @@
+{
+  "name": "ab-consultores-nomina",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "install:frontend": "npm --prefix Frontend install",
+    "dev": "npm --prefix Frontend run dev",
+    "build": "npm --prefix Frontend run build",
+    "test": "npm --prefix Frontend test",
+    "lint": "npm --prefix Frontend run lint",
+    "preview": "npm --prefix Frontend run preview"
+  }
+}
