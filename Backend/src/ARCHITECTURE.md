@@ -7,4 +7,4 @@ Al iniciar la implementación del backend, mantener las reglas puras y aisladas 
 - `payroll/templates/<empresa>/`: reglas específicas, únicamente cuando una plantilla sea aprobada para desarrollo.
 - `shared/`: primitivas pequeñas que tengan más de un consumidor real.
 
-La estructura es una guía y se creará junto con código funcional, sin módulos vacíos. La plantilla OMIRA y el motor de cálculo siguen fuera del alcance actual.
+La estructura es una guía y se creará junto con código funcional, sin módulos vacíos. Las plantillas específicas y el motor de cálculo siguen fuera del alcance actual.

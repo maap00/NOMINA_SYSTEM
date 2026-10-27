@@ -10,12 +10,12 @@ export function EmployeeForm({ employee, onCancel, onSave }: {
   onSave: (draft: EmployeeDraft) => { fields?: EmployeeFieldErrors; message?: string } | null
 }) {
   const [draft, setDraft] = useState<EmployeeDraft>(employee ? {
-    identityNumber: employee.identityNumber, firstName: employee.firstName, lastName: employee.lastName,
-    position: employee.position, department: employee.department || '', hireDate: employee.hireDate, status: employee.status,
+    identityNumber: employee.identityNumber, firstName: employee.fullName || employee.firstName, lastName: employee.fullName ? '' : employee.lastName,
+    fullName: employee.fullName, position: employee.position, department: employee.department || '', location: employee.location || '', hireDate: employee.hireDate, status: employee.status,
   } : blankDraft)
   const [errors, setErrors] = useState<EmployeeFieldErrors>({})
   const [formError, setFormError] = useState('')
-  const set = (field: keyof EmployeeDraft, value: string) => setDraft(current => ({ ...current, [field]: value }))
+  const set = (field: keyof EmployeeDraft, value: string) => setDraft(current => ({ ...current, [field]: value, ...(field === 'firstName' && employee?.fullName ? { fullName: value } : {}) }))
   const submit = (event: FormEvent) => {
     event.preventDefault()
     const result = onSave(draft)
@@ -33,13 +33,14 @@ export function EmployeeForm({ employee, onCancel, onSave }: {
       <form onSubmit={submit} noValidate><div className="form-grid">
         {field('identityNumber', 'Identificación', 'Ej. V-12345678', true)}
         {field('hireDate', 'Fecha de ingreso', '', true, 'date')}
-        {field('firstName', 'Nombres', 'Nombres', true)}
-        {field('lastName', 'Apellidos', 'Apellidos', true)}
+        {field('firstName', employee?.fullName ? 'Nombre completo' : 'Nombres', employee?.fullName ? 'Nombre completo' : 'Nombres', !employee?.fullName)}
+        {!employee?.fullName && field('lastName', 'Apellidos', 'Apellidos', true)}
         {field('position', 'Cargo', 'Cargo o puesto', true)}
         {field('department', 'Departamento o área', 'Opcional')}
+        {field('location', 'Ubicación / UBC', 'Opcional')}
       </div>
         {formError && <div className="form-error" role="alert">{formError}</div>}
-        <div className="modal-note">Los datos salariales y bancarios no forman parte de esta fase.</div>
+        <div className="modal-note">El sueldo y la cuenta bancaria pueden actualizarse por separado desde la ficha del empleado.</div>
         <div className="modal-actions"><button type="button" className="button button-secondary" onClick={onCancel}>Cancelar</button><button className="button button-primary"><Check size={15}/>{employee ? 'Guardar cambios' : 'Crear empleado'}</button></div>
       </form>
     </section>

@@ -61,6 +61,31 @@ describe('EmployeeService', () => {
     expect(service.setStatus('company-a', created.id, 'Activo').status).toBe('Activo')
     expect(service.list('company-a')).toHaveLength(1)
   })
+
+  it('edits compensation fields independently and preserves the rest of the employee', () => {
+    const service = new EmployeeService(new MemoryEmployeeRepository(), () => fixedDate)
+    const created = service.save('company-a', draft({ monthlySalaryUsd: 900, bankAccountNumber: '0012345000', department: 'Operaciones' }))
+    const salaryEdited = service.updateCompensation('company-a', created.id, { monthlySalaryUsd: 1250.5, bankAccountNumber: created.bankAccountNumber })
+    expect(salaryEdited.monthlySalaryUsd).toBe(1250.5)
+    expect(salaryEdited.bankAccountNumber).toBe('0012345000')
+    expect(salaryEdited.position).toBe('Analista')
+    expect(salaryEdited.department).toBe('Operaciones')
+    expect(salaryEdited.identityNumber).toBe(created.identityNumber)
+    const accountEdited = service.updateCompensation('company-a', created.id, { monthlySalaryUsd: salaryEdited.monthlySalaryUsd, bankAccountNumber: '0000000099' })
+    expect(accountEdited.monthlySalaryUsd).toBe(1250.5)
+    expect(accountEdited.bankAccountNumber).toBe('0000000099')
+    expect(accountEdited.position).toBe('Analista')
+  })
+
+  it('rejects invalid compensation and preserves the existing value', () => {
+    const repository = new MemoryEmployeeRepository()
+    const service = new EmployeeService(repository, () => fixedDate)
+    const created = service.save('company-a', draft({ monthlySalaryUsd: 700 }))
+    expect(() => service.updateCompensation('company-a', created.id, { monthlySalaryUsd: -1, bankAccountNumber: '001' })).toThrow(EmployeeValidationError)
+    expect(repository.list()[0].monthlySalaryUsd).toBe(700)
+    expect(service.updateCompensation('company-a', created.id, { monthlySalaryUsd: undefined, bankAccountNumber: '' }).monthlySalaryUsd).toBeUndefined()
+    expect(repository.list()[0].monthlySalaryUsd).toBeUndefined()
+  })
 })
 
 describe('LocalEmployeeRepository', () => {
@@ -82,6 +107,11 @@ describe('LocalEmployeeRepository', () => {
     const service = new EmployeeService(repository, () => fixedDate)
     const person = service.save('company-a', draft())
     expect(repository.list()[0]).toEqual(person)
+    expect(repository.list()[0]).not.toHaveProperty('monthlySalaryUsd')
+    expect(repository.list()[0]).not.toHaveProperty('bankAccountNumber')
+    const withCompensation = service.save('company-a', draft({ monthlySalaryUsd: 100, bankAccountNumber: '00001234' }), person.id)
+    expect(repository.list()[0]).toEqual(withCompensation)
+    expect(repository.list()[0].bankAccountNumber).toBe('00001234')
     values.set('ab-employees', '{not json')
     expect(() => repository.list()).toThrow(PersistenceError)
   })

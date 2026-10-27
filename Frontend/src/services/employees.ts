@@ -1,4 +1,4 @@
-import { createEmployee, normalizeIdentity, validateEmployeeDraft, type Employee, type EmployeeDraft, type EmployeeFieldErrors, type EmployeeStatus } from '../domain/employees/employee'
+import { createEmployee, normalizeIdentity, validateEmployeeDraft, type Employee, type EmployeeCompensationDraft, type EmployeeDraft, type EmployeeFieldErrors, type EmployeeStatus } from '../domain/employees/employee'
 import type { EmployeeRepository } from './storage'
 
 export class EmployeeValidationError extends Error {
@@ -26,7 +26,7 @@ export class EmployeeService {
     const query = normalizeEmployeeSearch(options.query || '')
     return this.repository.list().filter(employee => employee.companyId === companyId &&
       (!options.status || options.status === 'Todos' || employee.status === options.status) &&
-      (!query || [employee.identityNumber, employee.firstName, employee.lastName, employee.position]
+      (!query || [employee.identityNumber, employee.fullName || `${employee.firstName} ${employee.lastName}`, employee.firstName, employee.lastName, employee.position, employee.location || '']
         .some(value => normalizeEmployeeSearch(value).includes(query))))
   }
 
@@ -42,7 +42,7 @@ export class EmployeeService {
     if (Object.keys(errors).length) throw new EmployeeValidationError(errors)
     const timestamp = this.now()
     const employee = current
-      ? { ...current, ...draft, status: draft.status || current.status, identityNumber: draft.identityNumber.trim(), firstName: draft.firstName.trim(), lastName: draft.lastName.trim(), position: draft.position.trim(), department: draft.department?.trim() || undefined, updatedAt: timestamp.toISOString() }
+      ? { ...current, ...draft, status: draft.status || current.status, identityNumber: draft.identityNumber.trim(), firstName: draft.firstName.trim(), lastName: draft.lastName.trim(), fullName: draft.fullName?.trim() || undefined, position: draft.position.trim(), department: draft.department?.trim() || undefined, location: draft.location?.trim() || undefined, monthlySalaryUsd: 'monthlySalaryUsd' in draft ? draft.monthlySalaryUsd : current.monthlySalaryUsd, bankAccountNumber: 'bankAccountNumber' in draft ? draft.bankAccountNumber?.trim() || undefined : current.bankAccountNumber, updatedAt: timestamp.toISOString() }
       : createEmployee(companyId, draft, timestamp, this.createId())
     const next = current ? all.map(item => item.id === employee.id && item.companyId === companyId ? employee : item) : [...all, employee]
     this.repository.saveAll(next)
@@ -57,6 +57,27 @@ export class EmployeeService {
     this.repository.saveAll(all.map(employee => employee.id === id && employee.companyId === companyId ? updated : employee))
     return updated
   }
+
+  updateCompensation(companyId: string, id: string, values: EmployeeCompensationDraft): Employee {
+    const all = this.repository.list()
+    const current = all.find(employee => employee.companyId === companyId && employee.id === id)
+    if (!current) throw new Error('No se encontró la persona en esta empresa.')
+    if (values.monthlySalaryUsd !== undefined && (!Number.isFinite(values.monthlySalaryUsd) || values.monthlySalaryUsd < 0)) {
+      throw new EmployeeValidationError({ monthlySalaryUsd: 'El sueldo debe ser un importe válido mayor o igual a cero.' })
+    }
+    const updated: Employee = {
+      ...current,
+      monthlySalaryUsd: values.monthlySalaryUsd,
+      bankAccountNumber: values.bankAccountNumber?.trim() || undefined,
+      updatedAt: this.now().toISOString(),
+    }
+    this.repository.saveAll(all.map(employee => employee.id === id && employee.companyId === companyId ? updated : employee))
+    return updated
+  }
+}
+
+export function getEmployeeDisplayName(employee: Employee): string {
+  return employee.fullName?.trim() || `${employee.firstName} ${employee.lastName}`.trim()
 }
 
 export function normalizeEmployeeSearch(value: string): string {

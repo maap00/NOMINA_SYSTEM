@@ -69,7 +69,11 @@ function isEmployee(item: unknown): item is Employee {
     typeof candidate.identityNumber === 'string' && typeof candidate.firstName === 'string' &&
     typeof candidate.lastName === 'string' && typeof candidate.position === 'string' &&
     typeof candidate.hireDate === 'string' && (candidate.status === 'Activo' || candidate.status === 'Inactivo') &&
-    typeof candidate.createdAt === 'string' && typeof candidate.updatedAt === 'string'
+    typeof candidate.createdAt === 'string' && typeof candidate.updatedAt === 'string' &&
+    (candidate.fullName === undefined || typeof candidate.fullName === 'string') &&
+    (candidate.location === undefined || typeof candidate.location === 'string') &&
+    (candidate.monthlySalaryUsd === undefined || (typeof candidate.monthlySalaryUsd === 'number' && Number.isFinite(candidate.monthlySalaryUsd) && candidate.monthlySalaryUsd >= 0)) &&
+    (candidate.bankAccountNumber === undefined || typeof candidate.bankAccountNumber === 'string')
 }
 
 export class LocalCompanyRepository implements CompanyRepository {

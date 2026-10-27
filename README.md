@@ -37,4 +37,4 @@ Estos comandos puente ejecutan los scripts del frontend. `npm test` ejecuta las 
 
 ## Persistencia temporal
 
-Las empresas y empleados se guardan en `localStorage` en este navegador. No es una solución multiusuario, no sincroniza dispositivos y no debe usarse en producción. Si el navegador bloquea el almacenamiento, la aplicación informa que los cambios solo duran durante la sesión.
+Las empresas y empleados se guardan en `localStorage` en este navegador. Esto incluye información sensible del empleado, como sueldo y cuenta bancaria. El almacenamiento local no ofrece cifrado administrado, control de acceso multiusuario ni las garantías de seguridad de un sistema de producción; no debe usarse para datos reales en producción. No sincroniza dispositivos. Si el navegador bloquea el almacenamiento, la aplicación informa que los cambios solo duran durante la sesión.
