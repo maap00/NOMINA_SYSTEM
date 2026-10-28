@@ -2,6 +2,23 @@ import * as XLSX from 'xlsx'
 import type { Employee } from '../domain/employees/employee'
 import type { EmployeeRepository } from './storage'
 
+export const MAX_EMPLOYEE_WORKBOOK_SIZE = 20 * 1024 * 1024
+export const MAX_EMPLOYEE_WORKBOOK_ROWS_PER_SHEET = 100_000
+export const MAX_EMPLOYEE_WORKBOOK_COLUMNS_PER_SHEET = 256
+export const MAX_EMPLOYEE_WORKBOOK_CELLS = 500_000
+
+class EmployeeWorkbookLimitError extends Error {}
+
+function validateEmployeeWorkbookDimensions(rowCount: number, columnCount: number, existingCellCount = 0): number {
+  const sheetCellCount = rowCount * columnCount
+  if (!Number.isSafeInteger(sheetCellCount) || rowCount < 1 || columnCount < 1 ||
+    rowCount > MAX_EMPLOYEE_WORKBOOK_ROWS_PER_SHEET || columnCount > MAX_EMPLOYEE_WORKBOOK_COLUMNS_PER_SHEET ||
+    existingCellCount + sheetCellCount > MAX_EMPLOYEE_WORKBOOK_CELLS) {
+    throw new EmployeeWorkbookLimitError('El archivo supera los límites permitidos de filas, columnas o celdas.')
+  }
+  return existingCellCount + sheetCellCount
+}
+
 export type EmployeeImportField = 'identityNumber' | 'fullName' | 'position' | 'location' | 'hireDate' | 'salary' | 'bankAccount'
 export type EmployeeImportMapping = Record<EmployeeImportField, number | null>
 export interface EmployeeImportProfile {
@@ -33,25 +50,43 @@ function normalizeHeader(value: string): string {
 
 export function readEmployeeWorkbook(data: ArrayBuffer): WorkbookSheet[] {
   if (data.byteLength === 0) throw new Error('El archivo Excel está vacío.')
+  if (data.byteLength > MAX_EMPLOYEE_WORKBOOK_SIZE) throw new EmployeeWorkbookLimitError('El archivo supera el límite de 20 MB.')
+  const signature = new Uint8Array(data, 0, Math.min(4, data.byteLength))
+  if (signature.length < 4 || signature[0] !== 0x50 || signature[1] !== 0x4b || signature[2] !== 0x03 || signature[3] !== 0x04) {
+    throw new Error('El archivo no tiene un formato Excel .xlsx válido.')
+  }
   let workbook: XLSX.WorkBook
   try { workbook = XLSX.read(data, { type: 'array', cellDates: true, cellNF: true }) }
   catch { throw new Error('No se pudo leer el archivo. Comprueba que sea un Excel .xlsx válido y no esté protegido.') }
+  return convertEmployeeWorkbook(workbook)
+}
+
+export function convertEmployeeWorkbook(workbook: XLSX.WorkBook): WorkbookSheet[] {
   if (!workbook.SheetNames.length) throw new Error('El archivo no contiene hojas de cálculo.')
-  return workbook.SheetNames.map(name => {
-    const sheet = workbook.Sheets[name]
-    const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1:A1')
-    const rows: EmployeeImportRow[] = []
-    for (let row = range.s.r; row <= range.e.r; row += 1) {
-      const cells: EmployeeImportCell[] = []
-      for (let column = range.s.c; column <= range.e.c; column += 1) {
-        const cell = sheet[XLSX.utils.encode_cell({ r: row, c: column })]
-        const value = cell?.v ?? ''
-        cells.push({ value, formatted: cell ? XLSX.utils.format_cell(cell) : '', type: cell?.t || 'z', isDate: cell?.t === 'd' || Boolean(cell?.z && XLSX.SSF.is_date(cell.z)) })
+  try {
+    let workbookCellCount = 0
+    return workbook.SheetNames.map(name => {
+      const sheet = workbook.Sheets[name]
+      const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1:A1')
+      const rowCount = range.e.r - range.s.r + 1
+      const columnCount = range.e.c - range.s.c + 1
+      workbookCellCount = validateEmployeeWorkbookDimensions(rowCount, columnCount, workbookCellCount)
+      const rows: EmployeeImportRow[] = []
+      for (let row = range.s.r; row <= range.e.r; row += 1) {
+        const cells: EmployeeImportCell[] = []
+        for (let column = range.s.c; column <= range.e.c; column += 1) {
+          const cell = sheet[XLSX.utils.encode_cell({ r: row, c: column })]
+          const value = cell?.v ?? ''
+          cells.push({ value, formatted: cell ? XLSX.utils.format_cell(cell) : '', type: cell?.t || 'z', isDate: cell?.t === 'd' || Boolean(cell?.z && XLSX.SSF.is_date(cell.z)) })
+        }
+        rows.push({ rowNumber: row + 1, cells })
       }
-      rows.push({ rowNumber: row + 1, cells })
-    }
-    return { name, rows }
-  })
+      return { name, rows }
+    })
+  } catch (error) {
+    if (error instanceof EmployeeWorkbookLimitError) throw error
+    throw new Error('No se pudo leer el archivo. Comprueba que sea un Excel .xlsx válido y no esté protegido.', { cause: error })
+  }
 }
 
 export function mapEmployeeImportSheet(sheet: WorkbookSheet, profile: EmployeeImportProfile): EmployeeImportSheet {

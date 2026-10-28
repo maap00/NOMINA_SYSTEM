@@ -3,7 +3,7 @@ import { AlertCircle, Check, ChevronDown, FileSpreadsheet, Upload, X } from 'luc
 import type { Company } from '../../domain/company'
 import type { Employee } from '../../domain/employees/employee'
 import type { EmployeeRepository } from '../../services/storage'
-import { EmployeeSpreadsheetImportService, mapEmployeeImportSheet, parseSpreadsheetDate, previewEmployeeRows, readEmployeeWorkbook, type EmployeeImportField, type EmployeeImportPreviewRow, type EmployeeImportSheet, type EmployeeImportProfile } from '../../services/employeeImport'
+import { EmployeeSpreadsheetImportService, mapEmployeeImportSheet, MAX_EMPLOYEE_WORKBOOK_SIZE, parseSpreadsheetDate, previewEmployeeRows, readEmployeeWorkbook, type EmployeeImportField, type EmployeeImportPreviewRow, type EmployeeImportSheet, type EmployeeImportProfile } from '../../services/employeeImport'
 import { EMPLOYEE_ROSTER_IMPORT_PROFILE } from '../../services/employeeImportProfile'
 
 type Corrections = Partial<Pick<EmployeeImportPreviewRow, 'identityNumber' | 'fullName' | 'position' | 'location' | 'hireDate'>>
@@ -48,7 +48,7 @@ export function EmployeeSpreadsheetImport({ company, repository, profile = EMPLO
     event.target.value = ''
     if (!file) return
     if (!file.name.toLocaleLowerCase().endsWith('.xlsx')) { setError('Selecciona un archivo .xlsx.'); return }
-    if (file.size > 20 * 1024 * 1024) { setError('El archivo supera el límite de 20 MB.'); return }
+    if (file.size > MAX_EMPLOYEE_WORKBOOK_SIZE) { setError('El archivo supera el límite de 20 MB.'); return }
     setLoading(true); setError(''); setCorrections({}); setSheets([]); setActiveSheet('')
     try {
       const parsed = readEmployeeWorkbook(await file.arrayBuffer()).map(sheet => mapEmployeeImportSheet(sheet, profile))

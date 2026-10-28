@@ -2,7 +2,7 @@ import * as XLSX from 'xlsx'
 import { describe, expect, it } from 'vitest'
 import type { Company } from '../src/domain/company'
 import type { Employee } from '../src/domain/employees/employee'
-import { EmployeeSpreadsheetImportService, mapEmployeeImportSheet, parseSpreadsheetDate, parseSpreadsheetMoney, previewEmployeeRows, readEmployeeWorkbook } from '../src/services/employeeImport'
+import { convertEmployeeWorkbook, EmployeeSpreadsheetImportService, mapEmployeeImportSheet, MAX_EMPLOYEE_WORKBOOK_CELLS, MAX_EMPLOYEE_WORKBOOK_COLUMNS_PER_SHEET, MAX_EMPLOYEE_WORKBOOK_ROWS_PER_SHEET, MAX_EMPLOYEE_WORKBOOK_SIZE, parseSpreadsheetDate, parseSpreadsheetMoney, previewEmployeeRows, readEmployeeWorkbook } from '../src/services/employeeImport'
 import { EMPLOYEE_ROSTER_IMPORT_PROFILE, normalizePunctuatedIdentity } from '../src/services/employeeImportProfile'
 import { LocalEmployeeRepository, type EmployeeRepository, type KeyValueStorage } from '../src/services/storage'
 
@@ -86,6 +86,29 @@ describe('importación de empleados desde hojas de cálculo', () => {
     expect(previewEmployeeRows(sheet, [], firstCompany.id, profile).missingRequired).toEqual(['Identificación', 'Nombre completo'])
     expect(() => readEmployeeWorkbook(workbook([])).map(item => mapEmployeeImportSheet(item, profile))).toThrow(/encabezados|hoja/i)
     expect(() => readEmployeeWorkbook(new ArrayBuffer(0))).toThrow(/archivo excel está vacío/i)
+    expect(() => readEmployeeWorkbook(new TextEncoder().encode('esto no es xlsx').buffer)).toThrow(/formato excel .xlsx válido/i)
+    expect(() => readEmployeeWorkbook(new Uint8Array([0x50, 0x4b, 0x03, 0x04]).buffer)).toThrow(/no se pudo leer|no contiene hojas/i)
+  })
+
+  it('mantiene el límite de 20 MiB y rechaza libros cuyas dimensiones exceden el presupuesto de lectura', () => {
+    expect(MAX_EMPLOYEE_WORKBOOK_SIZE).toBe(20 * 1024 * 1024)
+    expect(MAX_EMPLOYEE_WORKBOOK_ROWS_PER_SHEET).toBe(100_000)
+    expect(MAX_EMPLOYEE_WORKBOOK_COLUMNS_PER_SHEET).toBe(256)
+    expect(MAX_EMPLOYEE_WORKBOOK_CELLS).toBe(500_000)
+    const workbookWithRange = (range: string) => ({ SheetNames: ['Personal'], Sheets: { Personal: { '!ref': range } } }) as unknown as XLSX.WorkBook
+    expect(convertEmployeeWorkbook(workbookWithRange('A1:T100'))[0].rows).toHaveLength(100)
+    expect(() => convertEmployeeWorkbook(workbookWithRange(`A1:IV${MAX_EMPLOYEE_WORKBOOK_ROWS_PER_SHEET + 1}`))).toThrow(/límites permitidos/i)
+    expect(() => convertEmployeeWorkbook(workbookWithRange(`A1:${XLSX.utils.encode_col(MAX_EMPLOYEE_WORKBOOK_COLUMNS_PER_SHEET)}1`))).toThrow(/límites permitidos/i)
+    const workbookOverCellLimit = { SheetNames: ['Primera', 'Segunda'], Sheets: { Primera: { '!ref': 'A1:B1' }, Segunda: { '!ref': 'A1:E100000' } } } as unknown as XLSX.WorkBook
+    expect(() => convertEmployeeWorkbook(workbookOverCellLimit)).toThrow(/límites permitidos/i)
+    expect(() => readEmployeeWorkbook(new ArrayBuffer(MAX_EMPLOYEE_WORKBOOK_SIZE + 1))).toThrow(/20 MB/i)
+  })
+
+  it('acepta una hoja legítima con varias columnas y más de una fila', () => {
+    const sheet = importSheet(sourceRows)
+    expect(sheet.rows).toHaveLength(1)
+    expect(sheet.mapping.identityNumber).not.toBeNull()
+    expect(sheet.mapping.bankAccount).not.toBeNull()
   })
 
   it('mantiene el repositorio intacto cuando la persistencia falla', () => {
@@ -95,6 +118,19 @@ describe('importación de empleados desde hojas de cálculo', () => {
     repository.saveAll = () => { throw new Error('storage failure') }
     expect(() => new EmployeeSpreadsheetImportService(repository, profile).import(firstCompany.id, rows)).toThrow('storage failure')
     expect(repository.items).toEqual([])
+  })
+
+  it('no guarda filas parciales si encuentra un duplicado durante la validación final del lote', () => {
+    const rows = previewEmployeeRows(importSheet([
+      sourceRows[0],
+      ['12.345.682', 'Primera Persona', 'Operador', 'Producción', '', '', ''],
+      ['22.222.222', 'Segunda Persona', 'Operador', 'Producción', '', '', ''],
+    ]), [], firstCompany.id, profile).rows
+    rows[1].identityNumber = rows[0].identityNumber
+    const repository = new MemoryEmployees()
+    const service = new EmployeeSpreadsheetImportService(repository, profile, () => new Date('2026-10-26T12:00:00Z'), (() => { let id = 0; return () => `employee-${++id}` })())
+    expect(() => service.import(firstCompany.id, rows)).toThrow(/ya existe/i)
+    expect(repository.list()).toEqual([])
   })
 
   it('interpreta importes y marca fechas inválidas o ambiguas', () => {
